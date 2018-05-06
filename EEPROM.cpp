@@ -90,8 +90,12 @@ void writeParams(uint8_t b) {
 
 
 void update_constants(){
-  uint8_t s[3] = GYRO_SMOOTHING;
-  for(uint8_t i=0; i<3; i++) conf.Smoothing[i] = s[i];
+  #if defined(GYRO_SMOOTHING)
+    {
+      uint8_t s[3] = GYRO_SMOOTHING;
+      for(uint8_t i=0;i<3;i++) conf.Smoothing[i] = s[i];
+    }
+  #endif
 
   conf.minthrottle = MINTHROTTLE;
   conf.mag_declination = (int16_t)(MAG_DECLINATION * 10);

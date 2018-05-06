@@ -45,12 +45,13 @@ void computeIMU () {
   }
   
   //陀螺仪平滑处理
+  /*
   static int16_t gyroSmooth[3] = {0,0,0};
     for (axis = 0; axis < 3; axis++) {
       imu.gyroData[axis] = (int16_t) ( ( (int32_t)((int32_t)gyroSmooth[axis] * (conf.Smoothing[axis]-1) )+imu.gyroData[axis]+1 ) / conf.Smoothing[axis]);
       gyroSmooth[axis] = imu.gyroData[axis];
     }
-	
+	*/
 }
 	
 	
@@ -120,7 +121,7 @@ float InvSqrt (float x){
 }
 
 // 根据陀螺仪数据，使用小角度估计旋转估计矢量
-void rotateV(struct fp_vector *v,float* delta) {
+   void rotateV(struct fp_vector *v,float* delta) {
   fp_vector v_tmp = *v;
   v->Z -= delta[ROLL]  * v_tmp.X + delta[PITCH] * v_tmp.Y;
   v->X += delta[ROLL]  * v_tmp.Z - delta[YAW]   * v_tmp.Y;
@@ -169,20 +170,19 @@ void getEstimatedAttitude(){
   rotateV(&EstG.V,deltaGyroAngle);
   rotateV(&EstM.V,deltaGyroAngle);
 
-  accMag = accMag*100/((int32_t)ACC_1G*ACC_1G);
+  accMag = accMag*100/((int32_t)ACC_1G*ACC_1G);//这个×100的步骤也是为了放大误差
   validAcc = 72 < (uint16_t)accMag && (uint16_t)accMag < 133;
 
 
-  
+//现在这个.A成员进行了加权处理 
 for (axis = 0; axis < 3; axis++) {
     if ( validAcc )//加计数据有效，使用加计修正
       EstG.A[axis] = (EstG.A[axis] * GYR_CMPF_FACTOR + imu.accSmooth[axis]) * INV_GYR_CMPF_FACTOR;
     EstG32.A[axis] = EstG.A[axis]; 
     //int32_t cross calculation is a little bit faster than float	
-    #if MAG //有磁罗盘使用磁罗盘修正
-      EstM.A[axis] = (EstM.A[axis] * GYR_CMPFM_FACTOR  + imu.magADC[axis]) * INV_GYR_CMPFM_FACTOR;
-      EstM32.A[axis] = EstM.A[axis];
-    #endif
+    //有磁罗盘使用磁罗盘修正
+    EstM.A[axis] = (EstM.A[axis] * GYR_CMPFM_FACTOR  + imu.magADC[axis]) * INV_GYR_CMPFM_FACTOR;
+    EstM32.A[axis] = EstM.A[axis];
 }
 
 
@@ -196,7 +196,7 @@ for (axis = 0; axis < 3; axis++) {
 
 
 
-// 【4】估计姿态角
+// 【4】估计姿态角 用G成员算
   int32_t sqGX_sqGZ = sq(EstG32.V.X) + sq(EstG32.V.Z);
   invG = InvSqrt(sqGX_sqGZ + sq(EstG32.V.Y));//矢量模长倒数分之一
   att.angle[ROLL]  = _atan2(EstG32.V.X , EstG32.V.Z);
@@ -209,8 +209,10 @@ att.heading = _atan2(
     att.heading += conf.mag_declination; // GUI当中设置偏移量
     att.heading /= 10;
 
-}
 
+    att.heading = 0;
+
+}
 
 
 

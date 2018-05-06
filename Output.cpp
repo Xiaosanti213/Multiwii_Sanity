@@ -56,7 +56,7 @@ void mixTable() {
       maxMotor=motor[i];//找到最大舵量的电机
     for(i=0; i< NUMBER_MOTOR; i++) {
       if (maxMotor > MAXTHROTTLE) 
-        motor[i] -= maxMotor - MAXTHROTTLE;
+        motor[i] -= maxMotor - MAXTHROTTLE;//超出的部分减去
       motor[i] = constrain(motor[i], conf.minthrottle, MAXTHROTTLE);
       if ((rcData[THROTTLE] < MINCHECK))
       motor[i] = conf.minthrottle;

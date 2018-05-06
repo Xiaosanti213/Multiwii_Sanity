@@ -350,7 +350,7 @@ void evaluateCommand() {
      s_struct((uint8_t*)&st,11);
      break;
    case MSP_RAW_IMU: 
-     s_struct((uint8_t*)&imu,18);
+     s_struct((uint8_t*)&imu,18);//传感器原生数据
      break;
    case MSP_SERVO:
      s_struct((uint8_t*)&servo,16);
@@ -370,7 +370,7 @@ void evaluateCommand() {
 
 	 
    case MSP_ATTITUDE:
-     s_struct((uint8_t*)&att,6);
+     s_struct((uint8_t*)&att,6);//解算得到的姿态数据
      break;
    case MSP_ALTITUDE:
      s_struct((uint8_t*)&alt,6);

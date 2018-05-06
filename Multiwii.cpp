@@ -92,13 +92,16 @@ uint8_t rcSerialCount = 0;   // a counter to select legacy RX when there is no m
   /**************************************************************************************************************/
 
 
+  
 uint32_t currentTime = 0;
 uint16_t previousTime = 0;
 uint16_t cycleTime = 0;  
 
+
 uint16_t calibratingA = 0;  // the calibration is done in the main loop. Calibrating decreases at each cycle down to 0, then we enter in a normal mode.
 uint16_t calibratingB = 0;  // baro calibration = get new ground pressure value
-uint16_t calibratingG;
+uint16_t calibratingG = 0;
+
 
 
 int32_t  AltHold; // in cm
@@ -107,16 +110,20 @@ int16_t  BaroPID = 0;
 int16_t  errorAltitudeI = 0;
 
 
+
 int16_t gyroZero[3] = {0,0,0};      //陀螺仪校准零偏
 imu_t imu;							
 analog_t analog;
 alt_t alt;
 att_t att;
-int16_t  debug[4];
+int16_t  debug[4];					//调试输出用参数
 flags_struct_t f;					//标志位结构体
 
 int16_t  i2c_errors_count = 0;
 int16_t  annex650_overrun_count = 0;
+
+
+
 
 //手势判断中使用
 #define ROL_LO  (1<<(2*ROLL))		//ROLL=0 在低位为01 中位11 高位10
@@ -316,7 +323,6 @@ void loop () {
 	
 	
 	
-	
 if (currentTime > rcTime ) { // 50Hz
     rcTime = currentTime + 20000;
     computeRC();
@@ -366,6 +372,8 @@ else{
         taskOrder++;
           if (getEstimatedAltitude() !=0) break;
 }
+
+}
 	
 
 computeIMU();
@@ -382,59 +390,68 @@ previousTime = currentTime;
 prop = min(max(abs(rcCommand[PITCH]),abs(rcCommand[ROLL])),500); 
 // 俯仰偏航舵量映射指令范围 [0;500]
 
+
+
+//控制  
  for(axis=0;axis<3;axis++) {
-    // 根据飞行模式确定目标角速率
+    // 外环
     if ( axis<2 ) { 
       // 计算外环偏差，限制舵量指令（即为角度指令）到最大50度倾斜
       // 三部分组成：指令-当前解算姿态角+角度微调量
       // 暂时把GPS_angle[axis]去掉
-      errorAngle = constrain((rcCommand[axis]<<1),-500,+500) - att.angle[axis] + conf.angleTrim[axis]; //16位在此处可以
+      errorAngle = constrain((rcCommand[axis]<<1),-500,+500) - att.angle[axis] + conf.angleTrim[axis]; //16位在此处足够存储 
       // 十个舵量代表1度
+	  AngleRateTmp = ((int32_t) errorAngle * conf.pid[PIDLEVEL].P8)>>4;//LEVEL外环系数 当前conf.pid[PIDLEVEL].P8 = 3 再除以16 相当于除以5.3  假设errorAngle为几十的量级（角度相差几度）得到十几
     }
-	
-	if (axis == 2) {
+	else {
     // 偏航控制：将磁罗盘校正用于控制量当中
     // 舵量直接就是角速率指令
-      AngleRateTmp = (((int32_t) (conf.yawRate + 27) * rcCommand[2]) >> 5);
+      AngleRateTmp = (((int32_t) (conf.yawRate + 27) * rcCommand[2]) >> 5);//GUI中配置conf.yawRate=0 rcCommand[2]为-500~500 除以32应该是瞬时范围-422~422
     }
 	
-	else { // 滚转俯仰轴控制
-        //ANGLE传统增稳模式 - 控制量基于角度, 所以需要控制环
-        AngleRateTmp = ((int32_t) errorAngle * conf.pid[PIDLEVEL].P8)>>4;
-    }
 	
 	//外环角度环作为内环参考，和当前解算速率值作差
-	RateError = AngleRateTmp  - imu.gyroData[axis]; 
+	RateError = AngleRateTmp  - imu.gyroData[axis]; //这个imu.gyroData[axis]应该是deg/s
 	
 	//下面计算内环PID
-	PTerm = ((int32_t) RateError * conf.pid[axis].P8)>>7;  
-	  
-	errorGyroI[axis]  += (((int32_t) RateError * cycleTime)>>11) * conf.pid[axis].I8;  
-	errorGyroI[axis]  = constrain(errorGyroI[axis], (int32_t) -GYRO_I_MAX<<13, (int32_t) +GYRO_I_MAX<<13);  
+	
+	//内环比例P
+	PTerm = ((int32_t) RateError * conf.pid[axis].P8)>>7;  //俯仰滚转轴为2.8 偏航轴为6.8 除以128 得到分别乘0.021875 和 0.053125
+	
+	//内环积分I 
+	errorGyroI[axis]  += (((int32_t) RateError * cycleTime)>>11) * conf.pid[axis].I8;  // 俯仰滚转轴为0.010 偏航轴为0.045 cycleTime微秒为单位28 000数量级 系数相乘得到数量级：0.15
+	errorGyroI[axis]  = constrain(errorGyroI[axis], (int32_t) -GYRO_I_MAX<<13, (int32_t) +GYRO_I_MAX<<13);  //GYRO_I_MAX在loop函数中 进入控制器前声明为256 再×8192
 	ITerm = errorGyroI[axis]>>13; 
 	  
+	//内环微分D
 	delta = RateError - lastError[axis];  
 	lastError[axis] = RateError;  
-	delta = ((int32_t) delta * ((uint16_t)0xFFFF / (cycleTime>>4)))>>6;
+	delta = ((int32_t) delta * ((uint16_t)0xFFFF / (cycleTime>>4)))>>6;//这个可以用C语言测试输出一下
 	//取均值降噪
 	deltaSum       = delta1[axis]+delta2[axis]+delta;
 	delta2[axis]   = delta1[axis];
 	delta1[axis]   = delta;
-	DTerm = (deltaSum*conf.pid[axis].D8)>>8;
+	DTerm = (deltaSum*conf.pid[axis].D8)>>8;//经过输出测试 始终维持才几的数量级 特别快了会达到30~40
+	
 	
 	//求和计算PID输出
     axisPID[axis] =  PTerm + ITerm + DTerm;
+	
+    
+  debug[axis] = imu.gyroData[axis];
+  debug[3] = ((uint16_t)0xFFFF / (cycleTime>>4))>>6;
+
+	
 	
 	mixTable();
 	writeMotors();
 	
 }	
-	
+
+
 }	
-	
-	  
-	  
-}
+	 
+
 
 
 
