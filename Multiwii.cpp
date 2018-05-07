@@ -436,10 +436,21 @@ prop = min(max(abs(rcCommand[PITCH]),abs(rcCommand[ROLL])),500);
 	
 	//求和计算PID输出
     axisPID[axis] =  PTerm + ITerm + DTerm;
-	
-    
-  debug[axis] = imu.gyroData[axis];
-  debug[3] = ((uint16_t)0xFFFF / (cycleTime>>4))>>6;
+
+
+  
+  if(axis == 0)
+  {
+    debug[0] = PTerm;
+    debug[1] = ITerm;
+  }
+  else if(axis == 2)
+  {
+    debug[2] = PTerm;
+    debug[3] = ITerm;
+  }
+
+
 
 	
 	

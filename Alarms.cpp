@@ -232,7 +232,7 @@ void turnOff(uint8_t resource){
   }
 }
 
-#if defined (PILOTLAMP) 
+#if defined (blinkLED) 
   //original code based on mr.rc-cam and jevermeister work
   //modified by doughboy to use timer interrupt
 

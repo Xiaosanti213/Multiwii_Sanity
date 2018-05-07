@@ -6,7 +6,7 @@
 #include "Alarms.h"
 
 uint8_t PWM_PIN[8] = {9,10,11,3,6,5,A2,12};   
-//对于+字四轴: 后-右-左-前
+
 
 void writeMotors() { 
     OCR1A = motor[0]>>3; //  pin 9
