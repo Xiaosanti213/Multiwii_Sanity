@@ -13,6 +13,7 @@
 #include "Sensors.h"
 #include "Serial.h"
 #include "Protocol.h"
+#include "GPS.h"
 
 #include <avr/pgmspace.h>
 
@@ -248,10 +249,11 @@ void setup() {
   readEEPROM();                               // check current setting integrity 
   blinkLED(2,40,1);       
   
-  configureReceiver();
+  configureReceiver();						  // 配置接收机引脚
  
-  initSensors();
+  initSensors();							  // 初始化IMU
   
+  GPS_set_pids();							  // 设置GPS的PID参数
   previousTime = micros();
 
   //貌似是循环过程中动态校准，这个赋值好像需要在初始化传感器前面
@@ -357,10 +359,29 @@ if (currentTime > rcTime ) { // 50Hz
 	  else if (rcSticks == THR_LO + YAW_HI + PIT_CE + ROL_CE) 
 		  go_arm();      						// 上锁状态检查是否解锁
 	  } else {}
+	  
+	  
+	  
+	  static uint8_t GPSNavReset = 1;
+	  if (f.GPS_FIX && GPS_numSat >= 5 ) {		// 当前GPS卫星个数足够定点
+        if (abs(rcCommand[ROLL])< AP_MODE && abs(rcCommand[PITCH]) < AP_MODE) {
+          if (!f.GPS_HOLD_MODE) {
+            f.GPS_HOLD_MODE = 1;				// 提取出来只有定点模式
+            GPSNavReset = 0;					// 禁止重置导航参数
+			GPS_I2C_command(I2C_GPS_COMMAND_POSHOLD,0);
+          }
+        } 
+	  }else{
+        f.GPS_HOLD_MODE = 0;
+	  }
+	  
+	  
+	  
+	  
 }
 else{
 	static uint8_t taskOrder=0; 				// 下面的功能不要在同一个循环当中调用，避免阻塞
-    if(taskOrder>2) taskOrder-=3;
+    if(taskOrder>3) taskOrder-=4;
     switch (taskOrder) {
       case 0:
         taskOrder++;
@@ -370,7 +391,10 @@ else{
         if (Baro_update() != 0 ) break;
       case 2:
         taskOrder++;
-          if (getEstimatedAltitude() !=0) break;
+        if (getEstimatedAltitude() !=0) break;
+	  case 3:
+        taskOrder++;
+		if(GPS_Enable) GPS_NewData();  break;
 }
 
 }
@@ -392,6 +416,22 @@ prop = min(max(abs(rcCommand[PITCH]),abs(rcCommand[ROLL])),500);
 
 
 
+// 如果当前卫星状态良好，进行HOLD定点并进行下面的运算
+if (f.GPS_HOLD_MODE) {
+  // 和北向组成直角三角形通过三角函数求两个直角边的长度
+  float sin_yaw_y = sin(att.heading*0.0174532925f);
+  float cos_yaw_x = cos(att.heading*0.0174532925f);
+	  
+  // 根据config.h文件当中的定义NAV_SLEW_RATE为30
+  nav_rated[LON]   += constrain(wrap_18000(nav[LON]-nav_rated[LON]),-NAV_SLEW_RATE,NAV_SLEW_RATE);
+  nav_rated[LAT]   += constrain(wrap_18000(nav[LAT]-nav_rated[LAT]),-NAV_SLEW_RATE,NAV_SLEW_RATE);
+  GPS_angle[ROLL]   = (nav_rated[LON]*cos_yaw_x - nav_rated[LAT]*sin_yaw_y) /10;
+  GPS_angle[PITCH]  = (nav_rated[LON]*sin_yaw_y + nav_rated[LAT]*cos_yaw_x) /10;
+}
+	  
+
+
+
 //控制  
  for(axis=0;axis<3;axis++) {
     // 外环
@@ -399,7 +439,7 @@ prop = min(max(abs(rcCommand[PITCH]),abs(rcCommand[ROLL])),500);
       // 计算外环偏差，限制舵量指令（即为角度指令）到最大50度倾斜
       // 三部分组成：指令-当前解算姿态角+角度微调量
       // 暂时把GPS_angle[axis]去掉
-      errorAngle = constrain((rcCommand[axis]<<1),-500,+500) - att.angle[axis] + conf.angleTrim[axis]; //16位在此处足够存储 
+      errorAngle = constrain((rcCommand[axis]<<1)+ GPS_angle[axis],-500,+500) - att.angle[axis] + conf.angleTrim[axis]; //16位在此处足够存储 
       // 十个舵量代表1度
 	  AngleRateTmp = ((int32_t) errorAngle * conf.pid[PIDLEVEL].P8)>>4;//LEVEL外环系数 当前conf.pid[PIDLEVEL].P8 = 3 再除以16 相当于除以5.3  假设errorAngle为几十的量级（角度相差几度）得到十几
     }
@@ -410,7 +450,7 @@ prop = min(max(abs(rcCommand[PITCH]),abs(rcCommand[ROLL])),500);
     }
 	
 	
-	//外环角度环作为内环参考，和当前解算速率值作差
+	// 外环角度环作为内环参考，和当前解算速率值作差
 	RateError = AngleRateTmp  - imu.gyroData[axis]; //这个imu.gyroData[axis]应该是deg/s
 	
 	//下面计算内环PID

@@ -649,7 +649,7 @@
 
     
     //#define NMEA
-    #define UBLOX
+    //#define UBLOX
     //#define MTK_BINARY16
     //#define MTK_BINARY19
     //#define INIT_MTK_GPS        // initialize MTK GPS for using selected speed, 5Hz update rate and GGA & RMC sentence or binary settings
@@ -659,7 +659,7 @@
        including some navigation functions
        contribution from EOSBandi   http://code.google.com/p/i2c-gps-nav/ 
        You have to use at least I2CGpsNav code r33 */
-    //#define I2C_GPS                                                     //To use I2C_GPS ***===============================================================
+    #define I2C_GPS                                                     
     // If your I2C GPS board has Sonar support enabled
    //#define I2C_GPS_SONAR
 
